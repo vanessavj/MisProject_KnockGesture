@@ -7,9 +7,12 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.AsyncTask;
 import android.os.SystemClock;
+import android.support.v4.text.TextUtilsCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.text.TextUtils;
 import android.util.Log;
+import android.util.Pair;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -31,13 +34,17 @@ public class MainActivity extends AppCompatActivity{
     private Sensor accel;
     private float[] gravity = new float[3];
     private float gravity_fac = 1.0f / 9.81f;
-    private int fft_num_elements = 512;
-    private double[] fft_x;
-    private double[] fft_y;
+    private int fft_num_elements = 32;
+    private double[][] fft_x;
+    private double[][] fft_y;
+    private double[] glob_array;
     private int fft_i = 0;
+    private int fft_num_chunk = 0;
     List<List<Float>> accelData;
+    private double t = 0;
     private long startTime;
     private boolean recording = false;
+    private int async_num = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -46,8 +53,10 @@ public class MainActivity extends AppCompatActivity{
         manager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         accel = manager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         accelData = new ArrayList<List<Float>>(4);
-        fft_x = new double[fft_num_elements];
-        fft_y = new double[fft_num_elements];
+        fft_x = new double[14][fft_num_elements];
+        fft_y = new double[14][fft_num_elements];
+
+        glob_array = new double[14];
 
         recordGesture = (Button) findViewById(R.id.recordGesture);
         executeGesture = (Button) findViewById(R.id.executeGesture);
@@ -63,8 +72,8 @@ public class MainActivity extends AppCompatActivity{
                 for(int i = 0; i < 4; i++) {
                     accelData.add(new ArrayList<Float>());
                 }
-                fft_x = new double[fft_num_elements];
-                fft_y = new double[fft_num_elements];
+                fft_x = new double[14][fft_num_elements];
+                fft_y = new double[14][fft_num_elements];
                 fft_i = 0;
                 recording = true;
                 startTime = SystemClock.uptimeMillis();
@@ -79,20 +88,29 @@ public class MainActivity extends AppCompatActivity{
                                     accelData.get(0).add(tmp[0]);
                                     accelData.get(1).add(tmp[1]);
                                     accelData.get(2).add(tmp[2]);
+                                    Log.i("Sensordata: ", tmp[0] + "  " + tmp[1] + "  " + tmp[2]);
                                     float mag = (float) Math.sqrt(tmp[0] * tmp[0] + tmp[1] * tmp[1] + tmp[2] * tmp[2]);
+                                    Log.i("Magnitude", mag + " ");
                                     accelData.get(3).add(mag);
-                                    fft_x[fft_i] = mag;
+                                    fft_x[fft_num_chunk][fft_i] = mag;
                                     fft_i = (fft_i + 1) % fft_num_elements;
+                                    if(fft_i == 0){
+                                        fft_num_chunk = (fft_num_chunk + 1) % 14;
+                                    }
                                 }
                             }
                             else{
                                 recording = false;
                                 manager.unregisterListener(this);
                                 recordGesture.setEnabled(true);
-                                new calc_fft().execute(fft_x,fft_y);
-                                gestureMap.put(enterName.getText().toString(), new Knock(enterName.getText().toString()));
-                                enterName.setText("");
-                                Log.i("Size", accelData.get(0).size()+" ");
+                                for(int i = 0; i < 14; i++){
+                                    Log.i("fft_x", array_to_string(fft_x[i]));
+                                    new calc_fft().execute(new FFT_async_type(fft_x[i],fft_y[i], i));
+                                }
+
+                                //gestureMap.put(enterName.getText().toString(), new Knock(enterName.getText().toString()));
+
+
                             }
                         }
                     }
@@ -102,8 +120,7 @@ public class MainActivity extends AppCompatActivity{
 
                     }
                 }, accel, SensorManager.SENSOR_DELAY_FASTEST);
-                String name = enterName.getText().toString();
-                gestureMap.put(name, new Knock(name));
+
 
             }
         });
@@ -111,9 +128,20 @@ public class MainActivity extends AppCompatActivity{
         executeGesture.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
+                for(String k : gestureMap.keySet()){
+                    gestureMap.get(k).print();
+                }
             }
         });
 
+    }
+
+    private String array_to_string(double[] doubles){
+        String out = "";
+        for(double d : doubles){
+            out += d + ", ";
+        }
+        return out;
     }
 
     private float[] isolate_gravity(float[] f){
@@ -131,26 +159,72 @@ public class MainActivity extends AppCompatActivity{
         return ret;
     }
 
-    private static float absolute(double mx, double my){
-        return (float) Math.sqrt(mx * mx + my * my);
+    private static double absolute(double mx, double my){
+        return Math.sqrt(mx * mx + my * my);
     }
 
 
-    private class calc_fft extends AsyncTask<double[], double[], float[]> {
+    private class calc_fft extends AsyncTask<FFT_async_type, double[], Pair<Double, Integer>> {
 
-        protected float[] doInBackground(double[]... raw){
-            double[] tmp1 = raw[0];
-            double[] tmp2 = raw[1];
-            Log.i("davort", raw[0] + "");
+        protected Pair<Double,Integer> doInBackground(FFT_async_type... raw){
+            double[] tmp1 = raw[0].fftx;
+            double[] tmp2 = raw[0].ffty;
+            Log.i("FFT INPUT: ", array_to_string(tmp1));
 
             FFT fourier = new FFT(fft_num_elements);
             fourier.fft(tmp1, tmp2);
-            Log.i("danach", raw[0] + "");
-            float[] ret = new float[fft_num_elements];
-            for(int i = 0; i < fft_num_elements; i++){
-                ret[i] = absolute(tmp1[i], tmp2[i]);
+
+            double[] ret = new double[fft_num_elements];
+            //double peak = 0;
+            double mean = 0;
+            for(int i = 1; i < fft_num_elements; i++){
+                double tmp = absolute(tmp1[i], tmp2[i]);
+                ret[i] = tmp;
+                mean += tmp;
+                //peak = Math.max(peak, tmp);
             }
-            return ret;
+            mean /= ret.length;
+            /*
+            if (peak >= t){
+                String out = "";
+                for(int i = 0; i < ret.length; i++){
+                    if(ret[i] < 0.9 * peak){
+                        ret[i] = 0;
+                    } else{
+                        ret[i] = ret[i] / peak * 100;
+                    }
+                    out += ret[i] + "  ";
+
+                }
+                Log.i("danach", out);
+            }*/
+            return new Pair<Double, Integer>(mean, raw[0].i) ;
+        }
+
+        protected void onPostExecute(Pair<Double, Integer> input){
+           glob_array[input.second] = input.first;
+            async_num += 1;
+            if (async_num == 14){
+                async_num = 0;
+                Log.i("Means", array_to_string(glob_array));
+                String name = enterName.getText().toString();
+                gestureMap.put(name, new Knock(name, glob_array));
+                enterName.setText("");
+            }
+
         }
     }
+
+    private class FFT_async_type {
+        public double[] fftx;
+        public double[] ffty;
+        public int i;
+
+        FFT_async_type(double[] mfftx, double[] mffty, int mi){
+            fftx = mfftx;
+            ffty = mffty;
+            i = mi;
+        }
+    }
+
 }
