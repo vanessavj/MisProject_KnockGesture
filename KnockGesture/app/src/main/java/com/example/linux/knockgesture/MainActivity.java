@@ -19,6 +19,7 @@ import android.widget.EditText;
 import android.widget.TextView;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,15 +34,15 @@ public class MainActivity extends AppCompatActivity{
     private SensorManager manager;
     private Sensor accel;
     private float[] gravity = new float[3];
-    private float gravity_fac = 1.0f / 9.81f;
-    private int fft_num_elements = 32;
-    private double[][] fft_x;
-    private double[][] fft_y;
+    private float gravity_fac = 1.0f;//1.0f / 9.81f;
+    private int fft_num_elements = 448;
+    private double[] fft_x;
+    private double[] fft_y;
     private double[] glob_array;
     private int fft_i = 0;
     private int fft_num_chunk = 0;
     List<List<Float>> accelData;
-    private double threshold = 0.2;
+    private double threshold = 0.05;
     private long startTime;
     private boolean recording = false;
     private int async_num = 0;
@@ -53,8 +54,8 @@ public class MainActivity extends AppCompatActivity{
         manager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         accel = manager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         accelData = new ArrayList<List<Float>>(4);
-        fft_x = new double[14][fft_num_elements];
-        fft_y = new double[14][fft_num_elements];
+        fft_x = new double[fft_num_elements];
+        fft_y = new double[fft_num_elements];
 
         glob_array = new double[14];
 
@@ -72,8 +73,8 @@ public class MainActivity extends AppCompatActivity{
                 for(int i = 0; i < 4; i++) {
                     accelData.add(new ArrayList<Float>());
                 }
-                fft_x = new double[14][fft_num_elements];
-                fft_y = new double[14][fft_num_elements];
+                fft_x = new double[fft_num_elements];
+                fft_y = new double[fft_num_elements];
                 fft_i = 0;
                 recording = true;
                 startTime = SystemClock.uptimeMillis();
@@ -92,21 +93,16 @@ public class MainActivity extends AppCompatActivity{
                                     float mag = (float) Math.sqrt(tmp[0] * tmp[0] + tmp[1] * tmp[1] + tmp[2] * tmp[2]);
                                     Log.i("Magnitude", mag + " ");
                                     accelData.get(3).add(mag);
-                                    fft_x[fft_num_chunk][fft_i] = mag;
+                                    fft_x[fft_i] = mag;
                                     fft_i = (fft_i + 1) % fft_num_elements;
-                                    if(fft_i == 0){
-                                        fft_num_chunk = (fft_num_chunk + 1) % 14;
-                                    }
                                 }
                             }
                             else{
                                 recording = false;
                                 manager.unregisterListener(this);
                                 recordGesture.setEnabled(true);
-                                for(int i = 0; i < 14; i++){
-                                    Log.i("fft_x", array_to_string(fft_x[i]));
-                                    new calc_fft().execute(new FFT_async_type(fft_x[i],fft_y[i], i));
-                                }
+                                Log.i("fft_x", array_to_string(fft_x));
+                                new calc_fft().execute(new FFT_async_type(fft_x, fft_y));
 
                                 //gestureMap.put(enterName.getText().toString(), new Knock(enterName.getText().toString()));
 
@@ -184,54 +180,40 @@ public class MainActivity extends AppCompatActivity{
     }
 
 
-    private class calc_fft extends AsyncTask<FFT_async_type, double[], Pair<Double, Integer>> {
+    private class calc_fft extends AsyncTask<FFT_async_type, double[], double[]> {
 
-        protected Pair<Double,Integer> doInBackground(FFT_async_type... raw){
-            double[] tmp1 = raw[0].fftx;
-            double[] tmp2 = raw[0].ffty;
-            Log.i("FFT INPUT: ", array_to_string(tmp1));
+        protected double[] doInBackground(FFT_async_type... raw){
+            Log.i("TASK INPUT: ", array_to_string(raw[0].fftx));
+            int num_chunks = (int) Math.ceil(fft_num_elements / 32.0);
+            double[] ret = new double[num_chunks];
+            FFT fourier = new FFT(32);
+            for(int i = 0; i < num_chunks; i++){
+                double[] tmp1 = Arrays.copyOfRange(raw[0].fftx, i*32, (i+1) * 32);;
+                double[] tmp2 = new double[32];
+                Log.i("FFT INPUT: ", array_to_string(tmp1));
 
-            FFT fourier = new FFT(fft_num_elements);
-            fourier.fft(tmp1, tmp2);
+                fourier.fft(tmp1, tmp2);
 
-            double[] ret = new double[fft_num_elements];
-            //double peak = 0;
-            double mean = 0;
-            for(int i = 1; i < fft_num_elements; i++){
-                double tmp = absolute(tmp1[i], tmp2[i]);
-                ret[i] = tmp;
-                mean += tmp;
-                //peak = Math.max(peak, tmp);
-            }
-            mean /= ret.length;
-            /*
-            if (peak >= t){
-                String out = "";
-                for(int i = 0; i < ret.length; i++){
-                    if(ret[i] < 0.9 * peak){
-                        ret[i] = 0;
-                    } else{
-                        ret[i] = ret[i] / peak * 100;
-                    }
-                    out += ret[i] + "  ";
-
+                double mean = 0;
+                for(int j = 0; j < 32; j++){
+                    mean += absolute(tmp1[i], tmp2[i]);
                 }
-                Log.i("danach", out);
-            }*/
-            return new Pair<Double, Integer>(mean, raw[0].i) ;
+                mean /= 32.0;
+                Log.i("mean: ", mean+"");
+                ret[i] = mean;
+            }
+
+//            return ret;
+            return normalize_vec(ret);
         }
 
-        protected void onPostExecute(Pair<Double, Integer> input){
-           glob_array[input.second] = input.first;
-            async_num += 1;
-            if (async_num == 14){
-                async_num = 0;
-                glob_array = normalize_vec(glob_array);
-                Log.i("Means", array_to_string(glob_array));
-                String name = enterName.getText().toString();
-                gestureMap.put(name, new Knock(name, glob_array));
-                enterName.setText("");
-            }
+        protected void onPostExecute(double[] input){
+            glob_array = input;
+            Log.i("Means", array_to_string(glob_array));
+            String name = enterName.getText().toString();
+            gestureMap.put(name, new Knock(name, glob_array));
+            enterName.setText("");
+
 
         }
     }
@@ -239,12 +221,10 @@ public class MainActivity extends AppCompatActivity{
     private class FFT_async_type {
         public double[] fftx;
         public double[] ffty;
-        public int i;
 
-        FFT_async_type(double[] mfftx, double[] mffty, int mi){
+        FFT_async_type(double[] mfftx, double[] mffty){
             fftx = mfftx;
             ffty = mffty;
-            i = mi;
         }
     }
 
