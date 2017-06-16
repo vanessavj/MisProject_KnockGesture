@@ -41,7 +41,7 @@ public class MainActivity extends AppCompatActivity{
     private int fft_i = 0;
     private int fft_num_chunk = 0;
     List<List<Float>> accelData;
-    private double t = 0;
+    private double threshold = 0.2;
     private long startTime;
     private boolean recording = false;
     private int async_num = 0;
@@ -163,6 +163,26 @@ public class MainActivity extends AppCompatActivity{
         return Math.sqrt(mx * mx + my * my);
     }
 
+    private double[] normalize_vec(double[] data){
+        double peak = 0;
+        for(double d : data){
+               peak = Math.max(peak, d);
+        }
+
+        if(peak > threshold){
+            for(int i = 0; i < data.length; i++){
+                if(data[i] < 0.5 * peak){
+                    data[i] = 0;
+                } else{
+                    data[i] = data[i] / peak * 100;
+                }
+            }
+        }else{
+            data = new double[data.length];
+        }
+        return data;
+    }
+
 
     private class calc_fft extends AsyncTask<FFT_async_type, double[], Pair<Double, Integer>> {
 
@@ -206,6 +226,7 @@ public class MainActivity extends AppCompatActivity{
             async_num += 1;
             if (async_num == 14){
                 async_num = 0;
+                glob_array = normalize_vec(glob_array);
                 Log.i("Means", array_to_string(glob_array));
                 String name = enterName.getText().toString();
                 gestureMap.put(name, new Knock(name, glob_array));
