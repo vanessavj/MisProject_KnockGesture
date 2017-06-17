@@ -35,17 +35,19 @@ public class MainActivity extends AppCompatActivity{
     private Sensor accel;
     private float[] gravity = new float[3];
     private float gravity_fac = 1.0f;//1.0f / 9.81f;
-    private int fft_num_elements = 448;
+    private int fft_num_elements = 700;
+    private int fft_size = 64;
     private double[] fft_x;
     private double[] fft_y;
     private double[] glob_array;
     private int fft_i = 0;
     private int fft_num_chunk = 0;
     List<List<Float>> accelData;
-    private double threshold = 0.05;
+    private double threshold = 0.5;
     private long startTime;
     private boolean recording = false;
     private int async_num = 0;
+    private boolean isExecuting = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,8 +58,8 @@ public class MainActivity extends AppCompatActivity{
         accelData = new ArrayList<List<Float>>(4);
         fft_x = new double[fft_num_elements];
         fft_y = new double[fft_num_elements];
-
-        glob_array = new double[14];
+        //Log.i("CEIL ", "" + (int) Math.ceil(fft_num_elements / (float)fft_size));
+        glob_array = new double[(int) Math.ceil(fft_num_elements / (float)fft_size)];
 
         recordGesture = (Button) findViewById(R.id.recordGesture);
         executeGesture = (Button) findViewById(R.id.executeGesture);
@@ -68,54 +70,9 @@ public class MainActivity extends AppCompatActivity{
             @Override
             public void onClick(View view) {
                 //recordAccel(view);
+                isExecuting = false;
                 recordGesture.setEnabled(false);
-                accelData = new ArrayList<List<Float>>(4);
-                for(int i = 0; i < 4; i++) {
-                    accelData.add(new ArrayList<Float>());
-                }
-                fft_x = new double[fft_num_elements];
-                fft_y = new double[fft_num_elements];
-                fft_i = 0;
-                recording = true;
-                startTime = SystemClock.uptimeMillis();
-                manager.registerListener(new SensorEventListener() {
-
-                    @Override
-                    public void onSensorChanged(SensorEvent sensorEvent) {
-                        if(recording){
-                            if(SystemClock.uptimeMillis() - startTime < 2000){
-                                if(sensorEvent.sensor.getType() == Sensor.TYPE_ACCELEROMETER){
-                                    float[] tmp = isolate_gravity(sensorEvent.values);
-                                    accelData.get(0).add(tmp[0]);
-                                    accelData.get(1).add(tmp[1]);
-                                    accelData.get(2).add(tmp[2]);
-                                    Log.i("Sensordata: ", tmp[0] + "  " + tmp[1] + "  " + tmp[2]);
-                                    float mag = (float) Math.sqrt(tmp[0] * tmp[0] + tmp[1] * tmp[1] + tmp[2] * tmp[2]);
-                                    Log.i("Magnitude", mag + " ");
-                                    accelData.get(3).add(mag);
-                                    fft_x[fft_i] = mag;
-                                    fft_i = (fft_i + 1) % fft_num_elements;
-                                }
-                            }
-                            else{
-                                recording = false;
-                                manager.unregisterListener(this);
-                                recordGesture.setEnabled(true);
-                                Log.i("fft_x", array_to_string(fft_x));
-                                new calc_fft().execute(new FFT_async_type(fft_x, fft_y));
-
-                                //gestureMap.put(enterName.getText().toString(), new Knock(enterName.getText().toString()));
-
-
-                            }
-                        }
-                    }
-
-                    @Override
-                    public void onAccuracyChanged(Sensor sensor, int i) {
-
-                    }
-                }, accel, SensorManager.SENSOR_DELAY_FASTEST);
+                recordGesture();
 
 
             }
@@ -124,12 +81,80 @@ public class MainActivity extends AppCompatActivity{
         executeGesture.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
+                isExecuting = true;
+                executeGesture.setEnabled(false);
+                recordGesture();
+
                 for(String k : gestureMap.keySet()){
                     gestureMap.get(k).print();
                 }
             }
         });
 
+    }
+
+    /*TODO:
+    * Input sanitation
+    *  Knock Number Tolerance
+    * */
+
+    private void recordGesture(){
+        accelData = new ArrayList<List<Float>>(4);
+        for(int i = 0; i < 4; i++) {
+            accelData.add(new ArrayList<Float>());
+        }
+        fft_x = new double[fft_num_elements];
+        fft_y = new double[fft_num_elements];
+        fft_i = 0;
+        recording = true;
+        startTime = SystemClock.uptimeMillis();
+        final int mdelay = 100;
+        manager.registerListener(new SensorEventListener() {
+
+            @Override
+            public void onSensorChanged(SensorEvent sensorEvent) {
+                if(recording){
+                    long curr_time = SystemClock.uptimeMillis();
+                    if(curr_time - startTime < 3000 + mdelay){
+                        if(curr_time - startTime > mdelay) {
+                            if (sensorEvent.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+                                float[] tmp = isolate_gravity(sensorEvent.values);
+                                accelData.get(0).add(tmp[0]);
+                                accelData.get(1).add(tmp[1]);
+                                accelData.get(2).add(tmp[2]);
+                                Log.i("Sensordata: ", tmp[0] + "  " + tmp[1] + "  " + tmp[2]);
+                                float mag = (float) Math.sqrt(tmp[0] * tmp[0] + tmp[1] * tmp[1] + tmp[2] * tmp[2]);
+                                Log.i("Magnitude", mag + " ");
+                                accelData.get(3).add(mag);
+                                fft_x[fft_i] = mag;
+                                fft_i = (fft_i + 1);
+                            }
+                        }
+                    }
+                    else{
+                        recording = false;
+                        manager.unregisterListener(this);
+                        if(isExecuting){
+                            executeGesture.setEnabled(true);
+                        }else{
+                            recordGesture.setEnabled(true);
+                        }
+                        Log.i("fft_x", array_to_string(fft_x));
+                        new calc_fft().execute(new FFT_async_type(fft_x, fft_y));
+                        fft_i = 0;
+
+                        //gestureMap.put(enterName.getText().toString(), new Knock(enterName.getText().toString()));
+
+
+                    }
+                }
+            }
+
+            @Override
+            public void onAccuracyChanged(Sensor sensor, int i) {
+
+            }
+        }, accel, SensorManager.SENSOR_DELAY_FASTEST);
     }
 
     private String array_to_string(double[] doubles){
@@ -153,6 +178,7 @@ public class MainActivity extends AppCompatActivity{
         ret[2] = (f[2] - gravity[2]) * gravity_fac;
 
         return ret;
+        //return f;
     }
 
     private static double absolute(double mx, double my){
@@ -184,38 +210,80 @@ public class MainActivity extends AppCompatActivity{
 
         protected double[] doInBackground(FFT_async_type... raw){
             Log.i("TASK INPUT: ", array_to_string(raw[0].fftx));
-            int num_chunks = (int) Math.ceil(fft_num_elements / 32.0);
+            int num_chunks = (int) Math.ceil(fft_num_elements / (float)fft_size);
             double[] ret = new double[num_chunks];
-            FFT fourier = new FFT(32);
+            FFT fourier = new FFT(fft_size);
             for(int i = 0; i < num_chunks; i++){
-                double[] tmp1 = Arrays.copyOfRange(raw[0].fftx, i*32, (i+1) * 32);;
-                double[] tmp2 = new double[32];
+                double[] tmp1 = Arrays.copyOfRange(raw[0].fftx, i*fft_size, (i+1) * fft_size);;
+                double[] tmp2 = new double[fft_size];
                 Log.i("FFT INPUT: ", array_to_string(tmp1));
 
                 fourier.fft(tmp1, tmp2);
 
                 double mean = 0;
-                for(int j = 0; j < 32; j++){
+                for(int j = 0; j < fft_size; j++){
                     mean += absolute(tmp1[i], tmp2[i]);
                 }
-                mean /= 32.0;
+                mean /= (float)fft_size;
                 Log.i("mean: ", mean+"");
                 ret[i] = mean;
             }
 
-//            return ret;
+            //return ret;
             return normalize_vec(ret);
         }
 
         protected void onPostExecute(double[] input){
             glob_array = input;
             Log.i("Means", array_to_string(glob_array));
-            String name = enterName.getText().toString();
-            gestureMap.put(name, new Knock(name, glob_array));
-            enterName.setText("");
 
+            if(!isExecuting){
+                String name = enterName.getText().toString();
+                gestureMap.put(name, new Knock(name, glob_array));
+                enterName.setText("");
+            } else {
+                float similar = Float.MAX_VALUE;
+                String name = "";
+                for(String k : gestureMap.keySet()){
+                    float tmp = isSimilar(glob_array, gestureMap.get(k).means);
+                    if(tmp < similar){
+                        similar = tmp;
+                        name = k;
+                    }
 
+                }
+                Log.i("Similar:", name + "  " + similar);
+            }
         }
+    }
+
+    private float isSimilar(double[] p1, double[] p2) {
+        List p1_indices = getIndices(p1);
+        List p2_indices = getIndices(p2);
+        float mean_distance = 0;
+        if(p1_indices.size() == p2_indices.size()){
+            for (int i = 0; i < p1_indices.size() - 1; i++){
+                mean_distance += Math.abs(((int) p1_indices.get(i+1) - (int) p1_indices.get(i))
+                                - ((int) p2_indices.get(i+1) - (int) p2_indices.get(i)));
+                //mean_distance += Math.abs((int) p1_indices.get(i) - (int) p2_indices.get(i));
+            }
+            mean_distance /= p1_indices.size() - 1;
+        }
+        else{
+            return Float.MAX_VALUE;
+        }
+        //return Math.abs(mean_distance - Math.abs((int) p1_indices.get(0) - (int) p2_indices.get(0)));
+        return mean_distance;
+    }
+
+    private List<Integer> getIndices(double[] p) {
+        List list = new ArrayList<Integer>();
+        for(int i = 0; i< p.length; i++){
+            if (p[i] != 0){
+                list.add(i);
+            }
+        }
+        return list;
     }
 
     private class FFT_async_type {
