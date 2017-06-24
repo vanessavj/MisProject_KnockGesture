@@ -29,6 +29,7 @@ public class MainActivity extends AppCompatActivity{
     protected Map <String, Knock> gestureMap = new HashMap<String, Knock>();
     protected Button recordGesture;
     protected Button executeGesture;
+    protected Button resetGestures;
     protected EditText enterName;
     protected TextView detectedGesture;
     private SensorManager manager;
@@ -49,6 +50,8 @@ public class MainActivity extends AppCompatActivity{
     private int async_num = 0;
     private boolean isExecuting = false;
 
+    private int counter;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -63,6 +66,7 @@ public class MainActivity extends AppCompatActivity{
 
         recordGesture = (Button) findViewById(R.id.recordGesture);
         executeGesture = (Button) findViewById(R.id.executeGesture);
+        resetGestures = (Button) findViewById(R.id.reset);
         enterName = (EditText) findViewById(R.id.enterName);
         detectedGesture = (TextView) findViewById(R.id.detectedGestureText);
 
@@ -91,6 +95,13 @@ public class MainActivity extends AppCompatActivity{
             }
         });
 
+        resetGestures.setOnClickListener(new View.OnClickListener() {
+           @Override
+            public void onClick(View view) {
+               gestureMap.clear();
+           }
+        });
+
     }
 
     /*TODO:
@@ -107,6 +118,7 @@ public class MainActivity extends AppCompatActivity{
         fft_y = new double[fft_num_elements];
         fft_i = 0;
         recording = true;
+        counter = 0;
         startTime = SystemClock.uptimeMillis();
         final int mdelay = 100;
         manager.registerListener(new SensorEventListener() {
@@ -119,6 +131,7 @@ public class MainActivity extends AppCompatActivity{
                         if(curr_time - startTime > mdelay) {
                             if (sensorEvent.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
                                 float[] tmp = isolate_gravity(sensorEvent.values);
+//                                float[] tmp = sensorEvent.values;
                                 accelData.get(0).add(tmp[0]);
                                 accelData.get(1).add(tmp[1]);
                                 accelData.get(2).add(tmp[2]);
@@ -128,6 +141,7 @@ public class MainActivity extends AppCompatActivity{
                                 accelData.get(3).add(mag);
                                 fft_x[fft_i] = mag;
                                 fft_i = (fft_i + 1);
+                                counter++;
                             }
                         }
                     }
@@ -142,6 +156,7 @@ public class MainActivity extends AppCompatActivity{
                         Log.i("fft_x", array_to_string(fft_x));
                         new calc_fft().execute(new FFT_async_type(fft_x, fft_y));
                         fft_i = 0;
+                        Log.i("num_elem: ", counter+"");
 
                         //gestureMap.put(enterName.getText().toString(), new Knock(enterName.getText().toString()));
 
@@ -173,9 +188,9 @@ public class MainActivity extends AppCompatActivity{
 
         float[] ret = new float[3];
 
-        ret[0] = (f[0] - gravity[0]) * gravity_fac;
-        ret[1] = (f[1] - gravity[1]) * gravity_fac;
-        ret[2] = (f[2] - gravity[2]) * gravity_fac;
+        ret[0] = f[0] - gravity[0];
+        ret[1] = f[1] - gravity[1];
+        ret[2] = f[2] - gravity[2];
 
         return ret;
         //return f;
@@ -193,7 +208,7 @@ public class MainActivity extends AppCompatActivity{
 
         if(peak > threshold){
             for(int i = 0; i < data.length; i++){
-                if(data[i] < 0.5 * peak){
+                if(data[i] < 0.4 * peak){
                     data[i] = 0;
                 } else{
                     data[i] = data[i] / peak * 100;
@@ -235,44 +250,105 @@ public class MainActivity extends AppCompatActivity{
 
         protected void onPostExecute(double[] input){
             glob_array = input;
-            Log.i("Means", array_to_string(glob_array));
+            Log.i("debug", "Means " + array_to_string(glob_array));
+
+            float similar = Float.MAX_VALUE;
+            String name = "";
+            for(String k : gestureMap.keySet()){
+                float tmp = getMostSimilar(glob_array, gestureMap.get(k).means);
+                if(tmp < similar){
+                    similar = tmp;
+                    name = k;
+                }
+
+            }
 
             if(!isExecuting){
-                String name = enterName.getText().toString();
-                gestureMap.put(name, new Knock(name, glob_array));
-                enterName.setText("");
-            } else {
-                float similar = Float.MAX_VALUE;
-                String name = "";
-                for(String k : gestureMap.keySet()){
-                    float tmp = isSimilar(glob_array, gestureMap.get(k).means);
-                    if(tmp < similar){
-                        similar = tmp;
-                        name = k;
-                    }
-
+                if(similar < 5.0){
+                    detectedGesture.setText("Gesture too similar to one that is allready stored, please try again");
+                }else {
+                    detectedGesture.setText("Gesture stored");
+                    String input_name = enterName.getText().toString();
+                    gestureMap.put(input_name, new Knock(input_name, glob_array));
+                    enterName.setText("");
                 }
+            } else {
+
                 Log.i("Similar:", name + "  " + similar);
+                detectedGesture.setText("Similar: " + name + "  " + similar);
             }
         }
     }
 
-    private float isSimilar(double[] p1, double[] p2) {
+    private float getMostSimilar(double[] p1, double[] p2){
+        float sim = Float.MAX_VALUE;
         List p1_indices = getIndices(p1);
         List p2_indices = getIndices(p2);
         float mean_distance = 0;
-        if(p1_indices.size() == p2_indices.size()){
-            for (int i = 0; i < p1_indices.size() - 1; i++){
-                mean_distance += Math.abs(((int) p1_indices.get(i+1) - (int) p1_indices.get(i))
-                                - ((int) p2_indices.get(i+1) - (int) p2_indices.get(i)));
-                //mean_distance += Math.abs((int) p1_indices.get(i) - (int) p2_indices.get(i));
+        int diff_elem = Math.abs(p1_indices.size() - p2_indices.size());
+        Log.i("debug", "diff_num_knocks: " + diff_elem);
+        if(diff_elem == 0){
+            // if equal number of knocks detected, return isSImilar of unmodified input
+            float tmp = isSimilar(p1_indices, p2_indices);
+            Log.i("debug ", "same number of knocks, getMostSimilar returns: " + tmp);
+            return tmp;
+        }else if(diff_elem == 1){
+
+            // maybe 2 knocks got into the same window
+            // to recognize those patterns too, we evaluate all possible inplace combinations
+            // against each other
+            List tmp1 = new ArrayList<>();
+            List tmp2;
+            // tmp2 is allways the pattern of smaller size, hence only tmp1 needs to be modified
+            if(p1_indices.size() > p2_indices.size()){
+                tmp2 = p2_indices;
+            }else{
+                tmp2 = p1_indices;
             }
-            mean_distance /= p1_indices.size() - 1;
-        }
-        else{
+            for(int i = 0; i < Math.max(p1_indices.size(), p2_indices.size()); i++){
+                // "10 +" to amrk that the patterns where not of same length
+                sim = Math.min(sim, 10 + isSimilar(get_list_without_i(tmp1, i), tmp2));
+            }
+            Log.i("debug: ", "get_most_similar returns " + sim);
+            return sim;
+        }else{
+            Log.i("debug ", "difference in knock number too high");
             return Float.MAX_VALUE;
         }
+
+    }
+
+
+
+    private List<Integer> get_list_without_i(List<Integer> list, int idx){
+        List l = new ArrayList<Integer>();
+        for(int i = 0; i < list.size(); i++) {
+            if (i != idx) {
+                l.add(list.get(i));
+            }
+        }
+        return l;
+    }
+
+
+    private float isSimilar(List p1_indices, List p2_indices) {
+        Log.i("Debug ", "is_similar has been called");
+        float mean_distance = 0;
+//        if(p1_indices.size() == p2_indices.size()){
+        for (int i = 0; i < p1_indices.size() - 1; i++){
+            mean_distance += Math.abs(((int) p1_indices.get(i+1) - (int) p1_indices.get(i))
+                                - ((int) p2_indices.get(i+1) - (int) p2_indices.get(i)));
+            //mean_distance += Math.abs((int) p1_indices.get(i) - (int) p2_indices.get(i));
+        }
+        if(p1_indices.size() > 1){
+            mean_distance /= (float) (p1_indices.size() - 1);
+        }
+//        }
+//        else{
+//            return Float.MAX_VALUE;
+//        }
         //return Math.abs(mean_distance - Math.abs((int) p1_indices.get(0) - (int) p2_indices.get(0)));
+        Log.i("Debug ", "is_similar returns " + mean_distance);
         return mean_distance;
     }
 
