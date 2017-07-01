@@ -1,12 +1,18 @@
 package com.example.linux.knockgesture;
 
+import android.content.ContentResolver;
 import android.content.Context;
+import android.database.Cursor;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.media.AudioManager;
+import android.media.MediaPlayer;
+import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.SystemClock;
+import android.provider.MediaStore;
 import android.support.v4.text.TextUtilsCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
@@ -18,6 +24,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -36,21 +43,24 @@ public class MainActivity extends AppCompatActivity{
     private Sensor accel;
     private float[] gravity = new float[3];
     private float gravity_fac = 1.0f;//1.0f / 9.81f;
-    private int fft_num_elements = 700;
-    private int fft_size = 64;
+    private int fft_num_elements = 330;
+    private int fft_size = 32;
     private double[] fft_x;
     private double[] fft_y;
     private double[] glob_array;
     private int fft_i = 0;
     private int fft_num_chunk = 0;
     List<List<Float>> accelData;
-    private double threshold = 0.5;
+    private double threshold = 2;
     private long startTime;
     private boolean recording = false;
     private int async_num = 0;
     private boolean isExecuting = false;
     private boolean startRecording = false;
     final int mdelay = 0;
+
+    private MediaPlayer mp;
+    private final Uri song_uri = Uri.parse("/Music/song.m4a");
 
     private int counter;
 
@@ -139,7 +149,7 @@ public class MainActivity extends AppCompatActivity{
                                     Log.i("Magnitude", mag + " ");
                                     accelData.get(3).add(mag);
                                     fft_x[fft_i] = mag;
-                                    fft_i = (fft_i + 1);
+                                    fft_i = (fft_i + 1)%fft_num_elements;
                                     counter++;
                                 }
                             }
@@ -162,6 +172,7 @@ public class MainActivity extends AppCompatActivity{
 
                         }
                     }
+
                 }
 
                 @Override
@@ -169,7 +180,31 @@ public class MainActivity extends AppCompatActivity{
 
                 }
             }, accel, SensorManager.SENSOR_DELAY_FASTEST);
-        }
+
+
+        gestureMap.put("PLAY", new Knock("PLAY", new double[]{1,0,0,0,1,0,0,0,1,0,0}));
+        gestureMap.put("STOP", new Knock("STOP", new double[]{0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0}));
+        gestureMap.put("NEXT", new Knock("NEXT", new double[]{0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0}));
+
+//            mp = new MediaPlayer();
+//            mp.setAudioStreamType(AudioManager.STREAM_MUSIC);
+//        try {
+//            mp.setDataSource(getApplicationContext(), song_uri);
+//            mp.prepareAsync();
+//        } catch (IOException e) {
+//            Log.i("ERROR", "FILE");
+//            e.printStackTrace();
+//        }
+//
+//        mp.setOnPreparedListener(new MediaPlayer.OnPreparedListener(){
+//
+//            @Override
+//            public void onPrepared(MediaPlayer mediaPlayer) {
+//                mediaPlayer.start();
+//            }
+//        });
+
+    }
 
 
 
@@ -217,7 +252,8 @@ public class MainActivity extends AppCompatActivity{
 
         if(peak > threshold){
             for(int i = 0; i < data.length; i++){
-                if(data[i] < 0.4 * peak){
+                if(data[i] < 1.2){
+//                if(data[i] < 0.25 * peak){
                     data[i] = 0;
                 } else{
                     data[i] = 1;
@@ -242,18 +278,19 @@ public class MainActivity extends AppCompatActivity{
                 double[] tmp2 = new double[fft_size];
                 Log.i("FFT INPUT: ", array_to_string(tmp1));
 
-                fourier.fft(tmp1, tmp2);
+//                fourier.fft(tmp1, tmp2);
 
                 double mean = 0;
                 for(int j = 0; j < fft_size; j++){
-                    mean += absolute(tmp1[i], tmp2[i]);
+                    mean += tmp1[i];
+//                    mean += absolute(tmp1[i], tmp2[i]);
                 }
                 mean /= (float)fft_size;
                 Log.i("mean: ", mean+"");
                 ret[i] = mean;
             }
 
-            //return ret;
+//            return ret;
             return normalize_vec(ret);
         }
 
@@ -264,7 +301,8 @@ public class MainActivity extends AppCompatActivity{
             float similar = Float.MAX_VALUE;
             String name = "";
             for(String k : gestureMap.keySet()){
-                float tmp = isSimilar(glob_array, gestureMap.get(k).means);
+                float tmp = isSimilar(gestureMap.get(k).means, glob_array);
+                Log.i("debug", "similarity score of " + k +" is: " + tmp);
                 if(tmp < similar){
                     similar = tmp;
                     name = k;
@@ -327,8 +365,8 @@ public class MainActivity extends AppCompatActivity{
         }
         Log.i("Debug", " p = " + p);
 
-        // hammingweight of p2
-        int h = p2_indices.size();
+        // hammingweight of gesture ( p1)
+        int h = p1_indices.size();
         Log.i("Debug", "h = " + h);
         Log.i("Debug ", "is_similar returns " + (k * p + h));
         return k * p + h;
@@ -339,7 +377,7 @@ public class MainActivity extends AppCompatActivity{
             return 1;
         }
         else{
-            return 4;
+            return 2;
         }
     }
 
@@ -379,5 +417,7 @@ public class MainActivity extends AppCompatActivity{
             ffty = mffty;
         }
     }
+
+
 
 }
