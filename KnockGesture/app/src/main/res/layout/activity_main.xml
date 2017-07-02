@@ -22,21 +22,46 @@
         android:text="Record Gesture"
         android:id="@+id/recordGesture"/>
 
+    <!--<TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/recordGestureText"/>-->
+
     <Button
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Execute Gesture"
         android:id="@+id/executeGesture"/>
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:id="@+id/detectedGestureText"/>
 
     <Button
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Reset Gestures"
         android:id="@+id/reset"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="24dp"
+        android:layout_margin="@dimen/activity_vertical_margin"
+        android:id="@+id/detectedGestureText"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/meansView"
+        android:layout_margin="@dimen/activity_vertical_margin"
+        android:textSize="24dp"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/meansSimilar"
+        android:layout_margin="@dimen/activity_vertical_margin"
+        android:textSize="24dp"/>
+
+
+
 
 </LinearLayout>

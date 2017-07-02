@@ -39,6 +39,9 @@ public class MainActivity extends AppCompatActivity{
     protected Button resetGestures;
     protected EditText enterName;
     protected TextView detectedGesture;
+    protected TextView meansView;
+    protected TextView meansSimilar;
+    protected TextView recordGestureText;
     private SensorManager manager;
     private Sensor accel;
     private float[] gravity = new float[3];
@@ -81,6 +84,9 @@ public class MainActivity extends AppCompatActivity{
         resetGestures = (Button) findViewById(R.id.reset);
         enterName = (EditText) findViewById(R.id.enterName);
         detectedGesture = (TextView) findViewById(R.id.detectedGestureText);
+        meansView = (TextView) findViewById(R.id.meansView);
+        meansSimilar = (TextView) findViewById(R.id.meansSimilar);
+        //recordGestureText = (TextView) findViewById(R.id.recordGestureText);
 
         recordGesture.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -123,56 +129,7 @@ public class MainActivity extends AppCompatActivity{
 
                 @Override
                 public void onSensorChanged(SensorEvent sensorEvent) {
-                    if(startRecording){
-                        startRecording = false;
-                        recording = true;
-                        fft_x = new double[fft_num_elements];
-                        fft_y = new double[fft_num_elements];
-                        fft_i = 0;
-                        recording = true;
-                        counter = 0;
-                        startTime = SystemClock.uptimeMillis();
-                    }
-                    if(recording){
-
-                        long curr_time = SystemClock.uptimeMillis();
-                        if(curr_time - startTime < 3000 + mdelay){
-                            if(curr_time - startTime > mdelay) {
-                                if (sensorEvent.sensor.getType() == Sensor.TYPE_LINEAR_ACCELERATION) {
-                                   // float[] tmp = isolate_gravity(sensorEvent.values);
-                                    float[] tmp = sensorEvent.values;
-                                    accelData.get(0).add(tmp[0]);
-                                    accelData.get(1).add(tmp[1]);
-                                    accelData.get(2).add(tmp[2]);
-                                    Log.i("Sensordata: ", tmp[0] + "  " + tmp[1] + "  " + tmp[2]);
-                                    float mag = (float) Math.sqrt(tmp[0] * tmp[0] + tmp[1] * tmp[1] + tmp[2] * tmp[2]);
-                                    Log.i("Magnitude", mag + " ");
-                                    accelData.get(3).add(mag);
-                                    fft_x[fft_i] = mag;
-                                    fft_i = (fft_i + 1)%fft_num_elements;
-                                    counter++;
-                                }
-                            }
-                        }
-                        else{
-                            recording = false;
-
-                            if(isExecuting){
-                                executeGesture.setEnabled(true);
-                            }else{
-                                recordGesture.setEnabled(true);
-                            }
-                            Log.i("fft_x", array_to_string(fft_x));
-                            new calc_fft().execute(new FFT_async_type(fft_x, fft_y));
-                            fft_i = 0;
-                            Log.i("num_elem: ", counter+"");
-
-                            //gestureMap.put(enterName.getText().toString(), new Knock(enterName.getText().toString()));
-
-
-                        }
-                    }
-
+                    recordGesture(sensorEvent);
                 }
 
                 @Override
@@ -182,9 +139,10 @@ public class MainActivity extends AppCompatActivity{
             }, accel, SensorManager.SENSOR_DELAY_FASTEST);
 
 
-        gestureMap.put("PLAY", new Knock("PLAY", new double[]{1,0,0,0,1,0,0,0,1,0,0}));
-        gestureMap.put("STOP", new Knock("STOP", new double[]{0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0}));
-        gestureMap.put("NEXT", new Knock("NEXT", new double[]{0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0}));
+        gestureMap.put("PLAY", new Knock("PLAY", new double[]{1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0}));
+        gestureMap.put("NEXT", new Knock("NEXT", new double[]{0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0}));
+        //gestureMap.put("STOP", new Knock("STOP", new double[]{0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0}));
+        gestureMap.put("STOP", new Knock("STOP", new double[]{0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0}));
 
 //            mp = new MediaPlayer();
 //            mp.setAudioStreamType(AudioManager.STREAM_MUSIC);
@@ -207,14 +165,60 @@ public class MainActivity extends AppCompatActivity{
     }
 
 
-
-
-    /*TODO:
-    * Input sanitation
-    *  Knock Number Tolerance
-    * */
-
     //private void recordGesture(){}
+
+    private void recordGesture(SensorEvent sensorEvent){
+        if(startRecording){
+            startRecording = false;
+            recording = true;
+            fft_x = new double[fft_num_elements];
+            fft_y = new double[fft_num_elements];
+            fft_i = 0;
+            recording = true;
+            counter = 0;
+            startTime = SystemClock.uptimeMillis();
+        }
+        if(recording){
+
+            long curr_time = SystemClock.uptimeMillis();
+            if(curr_time - startTime < 3000 + mdelay){
+                if(curr_time - startTime > mdelay) {
+                    if (sensorEvent.sensor.getType() == Sensor.TYPE_LINEAR_ACCELERATION) {
+                        // float[] tmp = isolate_gravity(sensorEvent.values);
+                        float[] tmp = sensorEvent.values;
+                        accelData.get(0).add(tmp[0]);
+                        accelData.get(1).add(tmp[1]);
+                        accelData.get(2).add(tmp[2]);
+                        Log.i("Sensordata: ", tmp[0] + "  " + tmp[1] + "  " + tmp[2]);
+                        float mag = (float) Math.sqrt(tmp[0] * tmp[0] + tmp[1] * tmp[1] + tmp[2] * tmp[2]);
+                        Log.i("Magnitude", mag + " ");
+                        accelData.get(3).add(mag);
+                        fft_x[fft_i] = mag;
+                        fft_i = (fft_i + 1)%fft_num_elements;
+                        counter++;
+                    }
+                }
+            }
+            else{
+                recording = false;
+
+                if(isExecuting){
+                    executeGesture.setEnabled(true);
+                }else{
+                    recordGesture.setEnabled(true);
+                }
+                Log.i("fft_x", array_to_string(fft_x));
+                new calc_fft().execute(new FFT_async_type(fft_x, fft_y));
+                fft_i = 0;
+                Log.i("num_elem: ", counter+"");
+
+                //gestureMap.put(enterName.getText().toString(), new Knock(enterName.getText().toString()));
+
+
+            }
+        }
+
+    }
 
     private String array_to_string(double[] doubles){
         String out = "";
@@ -223,6 +227,19 @@ public class MainActivity extends AppCompatActivity{
         }
         return out;
     }
+
+    private String array_to_awesome_string(double[] doubles){
+        String out = "";
+        for(double d : doubles){
+            if(d == 1.0){
+                out += "\u25A0";
+            }else{
+                out += "\u25A1";
+            }
+        }
+        return out;
+    }
+
 
     private float[] isolate_gravity(float[] f){
 
@@ -321,8 +338,16 @@ public class MainActivity extends AppCompatActivity{
                 }
             } else {
 
-                Log.i("Similar:", name + "  " + similar);
-                detectedGesture.setText("Similar: " + name + "  " + similar);
+                if(similar == Integer.MAX_VALUE){
+                    detectedGesture.setText("No Knocks registered.");
+                    meansView.setText("");
+                    meansSimilar.setText("");
+                } else {
+                    Log.i("Similar:", name + "  " + similar);
+                    detectedGesture.setText("Similar: " + name + "  " + similar);
+                    meansView.setText("Input: \n" + array_to_awesome_string(glob_array));
+                    meansSimilar.setText("Detected Gesture: \n" + array_to_awesome_string(gestureMap.get(name).means));
+                }
             }
         }
     }
@@ -351,13 +376,17 @@ public class MainActivity extends AppCompatActivity{
         for (int i = 0; i < p1.length; i++){
             xor.add((int) p1[i] ^ (int) p2[i]);
         }
-        int k = hammingweight(xor);
+        int k = 2 * hammingweight(xor);
         if (k == 0){
             return 0;
         }
         Log.i("Debug", "k = " + k);
         List p1_indices = getIndices(p1);
         List p2_indices = getIndices(p2);
+
+        if(p2_indices.size() == 0){
+            return Integer.MAX_VALUE;
+        }
 
         int p = 1;
         for (int i = 0; i < p2_indices.size() - 1; i++){
@@ -367,6 +396,8 @@ public class MainActivity extends AppCompatActivity{
 
         // hammingweight of gesture ( p1)
         int h = p1_indices.size();
+        p += Math.abs((int) p1_indices.get(0) - (int) p2_indices.get(0));
+
         Log.i("Debug", "h = " + h);
         Log.i("Debug ", "is_similar returns " + (k * p + h));
         return k * p + h;
