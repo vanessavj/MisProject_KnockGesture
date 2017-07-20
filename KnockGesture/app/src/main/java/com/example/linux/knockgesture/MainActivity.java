@@ -60,7 +60,7 @@ public class MainActivity extends AppCompatActivity{
     private int async_num = 0;
     private boolean isExecuting = false;
     private boolean startRecording = false;
-    final int mdelay = 0;
+    final int mdelay = 100;
 
     private MediaPlayer mp;
     private final Uri song_uri = Uri.parse("/Music/song.m4a");
@@ -139,7 +139,7 @@ public class MainActivity extends AppCompatActivity{
             }, accel, SensorManager.SENSOR_DELAY_FASTEST);
 
 
-        gestureMap.put("PLAY", new Knock("PLAY", new double[]{1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0}));
+        gestureMap.put("PLAY", new Knock("PLAY", new double[]{0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0}));
         gestureMap.put("NEXT", new Knock("NEXT", new double[]{0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0}));
         //gestureMap.put("STOP", new Knock("STOP", new double[]{0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0}));
         gestureMap.put("STOP", new Knock("STOP", new double[]{0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0}));
@@ -329,18 +329,21 @@ public class MainActivity extends AppCompatActivity{
 
             if(!isExecuting){
                 if(similar <= 1 || hammingweight(input) <= 1){
-                    detectedGesture.setText("Gesture too similar to one that is allready stored, please try again");
+                    detectedGesture.setText("Gesture too similar to one that is already stored, please try again");
                 }else {
                     detectedGesture.setText("Gesture stored");
                     String input_name = enterName.getText().toString();
                     gestureMap.put(input_name, new Knock(input_name, glob_array));
+                    meansView.setText("Input: \n" + array_to_awesome_string(glob_array));
+                    meansSimilar.setText("");
                     enterName.setText("");
+
                 }
             } else {
 
-                if(similar == Integer.MAX_VALUE){
-                    detectedGesture.setText("No Knocks registered.");
-                    meansView.setText("");
+                if(similar >= 60){
+                    detectedGesture.setText("Stored Knocks not similar enough (Similar:" + similar + ")");
+                    meansView.setText("Input: \n" + array_to_awesome_string(glob_array));
                     meansSimilar.setText("");
                 } else {
                     Log.i("Similar:", name + "  " + similar);
@@ -389,13 +392,21 @@ public class MainActivity extends AppCompatActivity{
         }
 
         int p = 1;
+        int q = 1;
         for (int i = 0; i < p2_indices.size() - 1; i++){
             p *= sigmoid((int) p2_indices.get(i+1) - (int) p2_indices.get(i));
         }
+        for (int i = 0; i < p1_indices.size() - 1; i++){
+            q *= sigmoid((int) p1_indices.get(i+1) - (int) p1_indices.get(i));
+        }
+
+        p = Math.abs(p - q) + 1;
+
         Log.i("Debug", " p = " + p);
 
         // hammingweight of gesture ( p1)
-        int h = p1_indices.size();
+        //Anpassen, damit viele Knocks nicht zu sehr gepunished werden
+        int h = (int) 0.75 * p1_indices.size();
         p += Math.abs((int) p1_indices.get(0) - (int) p2_indices.get(0));
 
         Log.i("Debug", "h = " + h);
