@@ -61,6 +61,10 @@ public class MainActivity extends AppCompatActivity{
     private boolean isExecuting = false;
     private boolean startRecording = false;
     final int mdelay = 100;
+    final int num_subarrays = 11;
+    final int recording_time = 3000;
+    private boolean initialised = false;
+    private boolean started_set_num = false;
 
     private MediaPlayer mp;
     private final Uri song_uri = Uri.parse("/Music/song.m4a");
@@ -77,7 +81,7 @@ public class MainActivity extends AppCompatActivity{
         fft_x = new double[fft_num_elements];
         fft_y = new double[fft_num_elements];
         //Log.i("CEIL ", "" + (int) Math.ceil(fft_num_elements / (float)fft_size));
-        glob_array = new double[(int) Math.ceil(fft_num_elements / (float)fft_size)];
+        glob_array = new double[num_subarrays];
 
         recordGesture = (Button) findViewById(R.id.recordGesture);
         executeGesture = (Button) findViewById(R.id.executeGesture);
@@ -129,7 +133,11 @@ public class MainActivity extends AppCompatActivity{
 
                 @Override
                 public void onSensorChanged(SensorEvent sensorEvent) {
-                    recordGesture(sensorEvent);
+                    if(!initialised){
+                        set_num_samples(sensorEvent);
+                    }else{
+                        recordGesture(sensorEvent);
+                    }
                 }
 
                 @Override
@@ -164,8 +172,43 @@ public class MainActivity extends AppCompatActivity{
 
     }
 
+    /*
+    * measures how many samples can be recorded in given time (@ recording_time)
+    * to be called only once, from on_create()
+    * */
+    private void set_num_samples(SensorEvent sensorEvent){
+        if(!started_set_num){
+            started_set_num = true;
+            startTime = SystemClock.uptimeMillis();
+        }
+        long curr_time = SystemClock.uptimeMillis();
+        if(curr_time - startTime < recording_time){
+            if (sensorEvent.sensor.getType() == Sensor.TYPE_LINEAR_ACCELERATION) {
+                // float[] tmp = isolate_gravity(sensorEvent.values);
+                float[] tmp = sensorEvent.values;
+                accelData.get(0).add(tmp[0]);
+                accelData.get(1).add(tmp[1]);
+                accelData.get(2).add(tmp[2]);
+                Log.i("Sensordata: ", tmp[0] + "  " + tmp[1] + "  " + tmp[2]);
+                float mag = (float) Math.sqrt(tmp[0] * tmp[0] + tmp[1] * tmp[1] + tmp[2] * tmp[2]);
+                Log.i("Magnitude", mag + " ");
+                accelData.get(3).add(mag);
+                fft_x[fft_i] = mag;
+                fft_i = (fft_i + 1)%fft_num_elements;
+                counter++;
+            }
+        }else{
+            initialised = true;
+            // + 17 as safety margin because the sensor varies in measuring speed
+            fft_num_elements = counter + 17;
+            fft_x = new double[fft_num_elements];
+            fft_y = new double[fft_num_elements];
+            glob_array = new double[num_subarrays];
+            fft_size = (counter +17) / 11;
+            Log.i("debug: set_num size:", (counter + 17)+ "" );
+        }
 
-    //private void recordGesture(){}
+    }
 
     private void recordGesture(SensorEvent sensorEvent){
         if(startRecording){
@@ -181,7 +224,7 @@ public class MainActivity extends AppCompatActivity{
         if(recording){
 
             long curr_time = SystemClock.uptimeMillis();
-            if(curr_time - startTime < 3000 + mdelay){
+            if(curr_time - startTime < recording_time + mdelay){
                 if(curr_time - startTime > mdelay) {
                     if (sensorEvent.sensor.getType() == Sensor.TYPE_LINEAR_ACCELERATION) {
                         // float[] tmp = isolate_gravity(sensorEvent.values);
@@ -289,7 +332,7 @@ public class MainActivity extends AppCompatActivity{
             Log.i("TASK INPUT: ", array_to_string(raw[0].fftx));
             int num_chunks = (int) Math.ceil(fft_num_elements / (float)fft_size);
             double[] ret = new double[num_chunks];
-            FFT fourier = new FFT(fft_size);
+//            FFT fourier = new FFT(fft_size);
             for(int i = 0; i < num_chunks; i++){
                 double[] tmp1 = Arrays.copyOfRange(raw[0].fftx, i*fft_size, (i+1) * fft_size);;
                 double[] tmp2 = new double[fft_size];
