@@ -87,7 +87,9 @@ public class MainActivity extends AppCompatActivity {
         glob_array = new double[num_subarrays];
 
         recordGesture = (Button) findViewById(R.id.recordGesture);
+        recordGesture.setEnabled(false);
         executeGesture = (Button) findViewById(R.id.executeGesture);
+        executeGesture.setEnabled(false);
         resetGestures = (Button) findViewById(R.id.reset);
         enterName = (EditText) findViewById(R.id.enterName);
         detectedGesture = (TextView) findViewById(R.id.detectedGestureText);
@@ -208,6 +210,8 @@ public class MainActivity extends AppCompatActivity {
             fft_y = new double[fft_num_elements];
             glob_array = new double[num_subarrays];
             fft_size = (counter + 27) / 11;
+            executeGesture.setEnabled(true);
+            recordGesture.setEnabled(true);
 
             Log.i("debug: set_num size:", (counter + 27) + "");
         }
